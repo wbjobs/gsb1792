@@ -1,0 +1,10 @@
+{
+  "name": "collab-undo",
+  "version": "0.1.0",
+  "description": "Collaborative local undo/redo with custom OT, BroadcastChannel sync and IndexedDB persistence",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

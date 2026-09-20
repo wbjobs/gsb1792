@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>协同编辑 + 本地撤销 Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 220px; font: 14px/1.5 monospace; box-sizing: border-box; }
+    button { margin-right: 8px; padding: 6px 14px; }
+    pre { background: #f4f4f4; padding: 12px; overflow: auto; font-size: 12px; }
+    .hint { color: #666; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>协同编辑 + 本地撤销/重做</h1>
+  <p class="hint">
+    用 <code>python3 -m http.server</code> 启动后在两个标签页打开本页。
+    编辑会经 BroadcastChannel 同步；撤销/重做只影响本标签页的本地操作，
+    远端操作通过自定义 OT 合并，日志持久化到 IndexedDB。
+  </p>
+  <textarea id="editor" placeholder="在此输入…"></textarea>
+  <p>
+    <button id="undo">撤销 (Ctrl+Z)</button>
+    <button id="redo">重做 (Ctrl+Y)</button>
+    <span id="peers" class="hint"></span>
+  </p>
+  <pre id="stats"></pre>
+
+  <script type="module">
+    import { CollabSession } from '../src/session.js';
+
+    const editor = document.getElementById('editor');
+    const statsEl = document.getElementById('stats');
+    const session = new CollabSession({ channelName: 'collab-undo-demo' });
+    await session.init();
+
+    let applying = false;
+    function refresh() {
+      applying = true;
+      editor.value = session.getText();
+      applying = false;
+      const s = session.stats();
+      statsEl.textContent = JSON.stringify(s, null, 2);
+    }
+
+    session.onUpdate(({ kind }) => {
+      if (kind === 'remote') refresh();
+      else refresh();
+    });
+
+    editor.addEventListener('input', () => {
+      if (applying) return;
+      session.applyText(editor.value);
+      refresh();
+    });
+
+    document.getElementById('undo').onclick = () => { session.undo(); refresh(); };
+    document.getElementById('redo').onclick = () => { session.redo(); refresh(); };
+    editor.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); session.undo(); refresh(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); session.redo(); refresh(); }
+    });
+
+    refresh();
+  </script>
+</body>
+</html>
