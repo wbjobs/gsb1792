@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>协同撤销/重做 Demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  textarea { width: 100%; height: 260px; font: 14px/1.5 monospace; box-sizing: border-box; }
+  .bar { display: flex; gap: 12px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+  button { padding: 6px 14px; }
+  #stats { color: #666; font-size: 13px; }
+  .hint { background: #f4f4f4; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>协同编辑 + 本地撤销/重做</h1>
+<p class="hint">在两个浏览器标签页中打开本页面：各自编辑会实时合并（BroadcastChannel + OT）；
+撤销（Ctrl+Z）只回退<strong>本标签页</strong>的操作，不影响对方输入。操作日志持久化到 IndexedDB。</p>
+<div class="bar">
+  <button id="undo">撤销 (Ctrl+Z)</button>
+  <button id="redo">重做 (Ctrl+Shift+Z)</button>
+  <span id="stats"></span>
+</div>
+<textarea id="editor" spellcheck="false"></textarea>
+<script type="module">
+  import { CollabEngine } from '../src/engine.js';
+  import { diffToOp } from '../src/ot.js';
+
+  const siteId = crypto.randomUUID().slice(0, 8);
+  const engine = new CollabEngine({ siteId, channel: 'collab-demo', maxUndo: 256, logWindow: 512 });
+  const editor = document.getElementById('editor');
+  const stats = document.getElementById('stats');
+  let applying = false;
+
+  function refreshStats() {
+    const s = engine.memoryStats();
+    stats.textContent = `站点 ${siteId} ｜ 撤销栈 ${s.undoDepth} ｜ 重做栈 ${s.redoDepth} ｜ 内存日志 ${s.logLength} 条（已裁剪 ${s.trimmed} 条至 IndexedDB）`;
+  }
+
+  editor.addEventListener('input', () => {
+    if (applying) return;
+    const op = diffToOp(engine.getText(), editor.value);
+    if (op.length > 0) engine.localEdit(op);
+    refreshStats();
+  });
+
+  engine.onchange = (doc, source) => {
+    if (source === 'remote' || source === 'undo' || source === 'redo') {
+      applying = true;
+      const pos = editor.selectionStart;
+      editor.value = doc;
+      editor.selectionStart = editor.selectionEnd = Math.min(pos, doc.length);
+      applying = false;
+    }
+    refreshStats();
+  };
+
+  function doUndo() { engine.undo(); refreshStats(); }
+  function doRedo() { engine.redo(); refreshStats(); }
+  document.getElementById('undo').onclick = doUndo;
+  document.getElementById('redo').onclick = doRedo;
+  editor.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) doRedo(); else doUndo();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); }
+  });
+
+  // 周期性快照到 IndexedDB
+  setInterval(() => engine.saveSnapshot(), 10000);
+  refreshStats();
+</script>
+</body>
+</html>
